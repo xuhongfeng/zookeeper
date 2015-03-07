@@ -785,7 +785,7 @@ public class ClientCnxn {
      * beats. It also spawns the ReadThread.
      */
     class SendThread extends ZooKeeperThread {
-        private long lastPingSentNs;
+        private long lastPingSentNs;//上次ping的时刻, 精度为纳秒
         private final ClientCnxnSocket clientCnxnSocket;
         private Random r = new Random(System.nanoTime());        
         private boolean isFirstConnect = true;
@@ -1075,7 +1075,7 @@ public class ClientCnxn {
             clientCnxnSocket.introduce(this, sessionId, outgoingQueue);
             clientCnxnSocket.updateNow();
             clientCnxnSocket.updateLastSendAndHeard();
-            int to;
+            int to; //剩多少时间timeout
             long lastPingRwServer = Time.currentElapsedTime();
             final int MAX_SEND_PING_INTERVAL = 10000; //10 seconds
             while (state.isAlive()) {
@@ -1439,6 +1439,7 @@ public class ClientCnxn {
         ReplyHeader r = new ReplyHeader();
         Packet packet = queuePacket(h, r, request, response, null, null, null,
                 null, watchRegistration, watchDeregistration);
+        // wait在packet上, 同步发送接收的方式值得学习
         synchronized (packet) {
             while (!packet.finished) {
                 packet.wait();

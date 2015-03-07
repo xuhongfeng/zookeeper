@@ -42,12 +42,22 @@ import java.util.Collection;
  *
  * 维护一个服务器Socket列表
  *
+ * HostProvider 会shuffle server列表
+ * next() 以round-robin的方式返回一个server
+ *
+ * client可以调用updateServerList来动态更改server列表, HostProvider会通过对比新、旧的
+ * serverList采取一定的策略来通知HostProvider的消费者(即Zookeeper client) 是否重新换一个
+ * server来连接， 从而达到load balance的目的
+ * 例如原来有3个server, updateServerList传进来5个server, 那么updateServerList会有
+ * 40%的概率return true.  return true以为者告诉client 挑另外两个server中的一个重连
+ *
  * HostProvider 的实现必须保证:
  * size() 不会返回0
  * next() 总能返回一个socket
  *
  * 不同的实现主要区别在于做DNS解析的策略
  * Zookeeper自带唯一一个实现是StaticHostProvider, 在实例化的时候即做DNS解析
+ *
  */
 public interface HostProvider {
     public int size();
