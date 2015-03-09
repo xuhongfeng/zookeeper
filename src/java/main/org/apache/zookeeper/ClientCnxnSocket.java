@@ -58,7 +58,9 @@ abstract class ClientCnxnSocket {
     protected ByteBuffer incomingBuffer = lenBuffer;
     protected long sentCount = 0;
     protected long recvCount = 0;
+    // 最后一次接收到数据的时间
     protected long lastHeard;
+    // 最后一次接发送数据的时间
     protected long lastSend;
     protected long now;
     protected ClientCnxn.SendThread sendThread;
@@ -81,10 +83,12 @@ abstract class ClientCnxnSocket {
         now = Time.currentElapsedTime();
     }
 
+    // 距离最近一次接收到数据的时间间隔
     int getIdleRecv() {
         return (int) (now - lastHeard);
     }
 
+    // 距离最近一次发送数据的时间间隔
     int getIdleSend() {
         return (int) (now - lastSend);
     }
