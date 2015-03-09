@@ -211,6 +211,18 @@ public class ClientCnxn {
     }
 
     /**
+     *
+     * 发送线程 和 接收线程 通过Packet来通讯, Packet起到共享内存的作用
+     *
+     * 如发送线程可以这样达到 同步发送请求 的效果:
+     * synchronized(packet) {
+     *     while (!packet.finished) {
+     *         packet.wait();
+     *     }
+     * }
+     *
+     * Packet 不是一次请求包, 而是同时包含Request 和 Response 的数据
+     *
      * This class allows us to pass the headers and the relevant records around.
      */
     static class Packet {
@@ -218,10 +230,23 @@ public class ClientCnxn {
 
         ReplyHeader replyHeader;
 
+        // jute 的一个接口, 类似于 Serializable, 表明子类可序列话
         Record request;
 
         Record response;
 
+        /**
+         *
+         * 存最后packet序列化后的二进制
+         *
+         * 模式:
+         *
+         *  packet.setXXX()
+         *  packet.setXXX()
+         *  ...
+         *  packet.createBB()
+         *
+         */
         ByteBuffer bb;
 
         /** Client's view of the path (may differ due to chroot) **/
@@ -1075,7 +1100,7 @@ public class ClientCnxn {
             clientCnxnSocket.introduce(this, sessionId, outgoingQueue);
             clientCnxnSocket.updateNow();
             clientCnxnSocket.updateLastSendAndHeard();
-            int to; //剩多少时间timeout
+            int to; //剩多少时间需要发ping. (ping 是穿插在主逻辑中的)
             long lastPingRwServer = Time.currentElapsedTime();
             final int MAX_SEND_PING_INTERVAL = 10000; //10 seconds
             while (state.isAlive()) {
