@@ -110,6 +110,8 @@ public class ClientCnxn {
      */
     private final LinkedBlockingDeque<Packet> outgoingQueue = new LinkedBlockingDeque<Packet>();
 
+    // 由sessionTimeout算出来的:
+    // connectTimeout = sessionTimeout / hostProvider.size();
     private int connectTimeout;
 
     /**
@@ -120,6 +122,8 @@ public class ClientCnxn {
      */
     private volatile int negotiatedSessionTimeout;
 
+    // 由sessionTimeout 算出来的
+    // readTimeout = sessionTimeout * 2 / 3;
     private int readTimeout;
 
     private final int sessionTimeout;
@@ -128,6 +132,10 @@ public class ClientCnxn {
 
     private final ClientWatchManager watcher;
 
+    /**
+     * 可能是构造函数传进来的(pre-established connection)
+     * 也可能是连接时生成的
+     */
     private long sessionId;
 
     private byte sessionPasswd[] = new byte[16];
@@ -1095,8 +1103,17 @@ public class ClientCnxn {
 
         private static final String RETRY_CONN_MSG =
             ", closing socket connection and attempting reconnect";
+
         @Override
         public void run() {
+
+            /**
+             *
+             * 主循环体是调ClientCnxnSocket.doTransport()
+             * 中间会穿插着往 outgoingQueue 放 Ping 包
+             *
+             */
+
             clientCnxnSocket.introduce(this, sessionId, outgoingQueue);
             clientCnxnSocket.updateNow();
             clientCnxnSocket.updateLastSendAndHeard();
@@ -1110,6 +1127,7 @@ public class ClientCnxn {
                         if (closing) {
                             break;
                         }
+                        // 在循环里建立连接
                         startConnect();
                         clientCnxnSocket.updateLastSendAndHeard();
                     }

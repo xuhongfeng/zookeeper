@@ -18,13 +18,6 @@
 
 package org.apache.zookeeper;
 
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
-import java.nio.ByteBuffer;
-import java.util.List;
-import java.util.concurrent.LinkedBlockingDeque;
-
 import org.apache.jute.BinaryInputArchive;
 import org.apache.zookeeper.ClientCnxn.Packet;
 import org.apache.zookeeper.common.Time;
@@ -32,6 +25,13 @@ import org.apache.zookeeper.proto.ConnectResponse;
 import org.apache.zookeeper.server.ByteBufferInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+import java.nio.ByteBuffer;
+import java.util.List;
+import java.util.concurrent.LinkedBlockingDeque;
 
 /**
  * A ClientCnxnSocket does the lower level communication with a socket
@@ -69,6 +69,9 @@ abstract class ClientCnxnSocket {
     /**
      * The sessionId is only available here for Log and Exception messages.
      * Otherwise the socket doesn't need to know it.
+     */
+    /**
+     * sessionId 是ClientCnxn的成员变量, 这里复制了一个只为了打Log
      */
     protected long sessionId;
 
