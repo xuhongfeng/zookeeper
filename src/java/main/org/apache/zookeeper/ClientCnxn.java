@@ -18,43 +18,10 @@
 
 package org.apache.zookeeper;
 
-import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.net.ConnectException;
-import java.net.InetSocketAddress;
-import java.net.Socket;
-import java.net.SocketAddress;
-import java.nio.ByteBuffer;
-import java.util.HashSet;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.Set;
-import java.util.Map.Entry;
-import java.util.concurrent.CopyOnWriteArraySet;
-import java.util.concurrent.LinkedBlockingDeque;
-import java.util.concurrent.LinkedBlockingQueue;
-
-import javax.security.auth.login.LoginException;
-import javax.security.sasl.SaslException;
-
 import org.apache.jute.BinaryInputArchive;
 import org.apache.jute.BinaryOutputArchive;
 import org.apache.jute.Record;
-import org.apache.zookeeper.AsyncCallback.ACLCallback;
-import org.apache.zookeeper.AsyncCallback.Children2Callback;
-import org.apache.zookeeper.AsyncCallback.ChildrenCallback;
-import org.apache.zookeeper.AsyncCallback.Create2Callback;
-import org.apache.zookeeper.AsyncCallback.DataCallback;
-import org.apache.zookeeper.AsyncCallback.MultiCallback;
-import org.apache.zookeeper.AsyncCallback.StatCallback;
-import org.apache.zookeeper.AsyncCallback.StringCallback;
-import org.apache.zookeeper.AsyncCallback.VoidCallback;
+import org.apache.zookeeper.AsyncCallback.*;
 import org.apache.zookeeper.KeeperException.Code;
 import org.apache.zookeeper.OpResult.ErrorResult;
 import org.apache.zookeeper.Watcher.Event;
@@ -66,32 +33,36 @@ import org.apache.zookeeper.ZooKeeper.WatchRegistration;
 import org.apache.zookeeper.client.HostProvider;
 import org.apache.zookeeper.client.ZooKeeperSaslClient;
 import org.apache.zookeeper.common.Time;
-import org.apache.zookeeper.proto.AuthPacket;
-import org.apache.zookeeper.proto.ConnectRequest;
-import org.apache.zookeeper.proto.Create2Response;
-import org.apache.zookeeper.proto.CreateResponse;
-import org.apache.zookeeper.proto.ExistsResponse;
-import org.apache.zookeeper.proto.GetACLResponse;
-import org.apache.zookeeper.proto.GetChildren2Response;
-import org.apache.zookeeper.proto.GetChildrenResponse;
-import org.apache.zookeeper.proto.GetDataResponse;
-import org.apache.zookeeper.proto.GetSASLRequest;
-import org.apache.zookeeper.proto.ReplyHeader;
-import org.apache.zookeeper.proto.RequestHeader;
-import org.apache.zookeeper.proto.SetACLResponse;
-import org.apache.zookeeper.proto.SetDataResponse;
-import org.apache.zookeeper.proto.SetWatches;
-import org.apache.zookeeper.proto.WatcherEvent;
+import org.apache.zookeeper.proto.*;
 import org.apache.zookeeper.server.ByteBufferInputStream;
 import org.apache.zookeeper.server.ZooKeeperThread;
 import org.apache.zookeeper.server.ZooTrace;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.security.auth.login.LoginException;
+import javax.security.sasl.SaslException;
+import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.ConnectException;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.net.SocketAddress;
+import java.nio.ByteBuffer;
+import java.util.*;
+import java.util.Map.Entry;
+import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.LinkedBlockingQueue;
+
 /**
  * This class manages the socket i/o for the client. ClientCnxn maintains a list
  * of available servers to connect to and "transparently" switches servers it is
  * connected to as needed.
+ *
+ * 不仅仅是一个网络连接。 维护一个server列表，必要时能够对使用者透明地在server间切换.
  *
  */
 public class ClientCnxn {
@@ -149,6 +120,8 @@ public class ClientCnxn {
      */
     private final LinkedBlockingDeque<Packet> outgoingQueue = new LinkedBlockingDeque<Packet>();
 
+    // 由sessionTimeout算出来的:
+    // connectTimeout = sessionTimeout / hostProvider.size();
     private int connectTimeout;
 
     /**
@@ -159,6 +132,8 @@ public class ClientCnxn {
      */
     private volatile int negotiatedSessionTimeout;
 
+    // 由sessionTimeout 算出来的
+    // readTimeout = sessionTimeout * 2 / 3;
     private int readTimeout;
 
     private final int sessionTimeout;
@@ -167,6 +142,10 @@ public class ClientCnxn {
 
     private final ClientWatchManager watcher;
 
+    /**
+     * 可能是构造函数传进来的(pre-established connection)
+     * 也可能是连接时生成的
+     */
     private long sessionId;
 
     private byte sessionPasswd[] = new byte[16];
@@ -250,6 +229,18 @@ public class ClientCnxn {
     }
 
     /**
+     *
+     * 发送线程 和 接收线程 通过Packet来通讯, Packet起到共享内存的作用
+     *
+     * 如发送线程可以这样达到 同步发送请求 的效果:
+     * synchronized(packet) {
+     *     while (!packet.finished) {
+     *         packet.wait();
+     *     }
+     * }
+     *
+     * Packet 不是一次请求包, 而是同时包含Request 和 Response 的数据
+     *
      * This class allows us to pass the headers and the relevant records around.
      */
     static class Packet {
@@ -257,10 +248,23 @@ public class ClientCnxn {
 
         ReplyHeader replyHeader;
 
+        // jute 的一个接口, 类似于 Serializable, 表明子类可序列话
         Record request;
 
         Record response;
 
+        /**
+         *
+         * 存最后packet序列化后的二进制
+         *
+         * 模式:
+         *
+         *  packet.setXXX()
+         *  packet.setXXX()
+         *  ...
+         *  packet.createBB()
+         *
+         */
         ByteBuffer bb;
 
         /** Client's view of the path (may differ due to chroot) **/
@@ -825,7 +829,7 @@ public class ClientCnxn {
      * beats. It also spawns the ReadThread.
      */
     class SendThread extends ZooKeeperThread {
-        private long lastPingSentNs;
+        private long lastPingSentNs;//上次ping的时刻, 精度为纳秒
         private final ClientCnxnSocket clientCnxnSocket;
         private Random r = new Random(System.nanoTime());        
         private boolean isFirstConnect = true;
@@ -1140,12 +1144,21 @@ public class ClientCnxn {
 
         private static final String RETRY_CONN_MSG =
             ", closing socket connection and attempting reconnect";
+
         @Override
         public void run() {
+
+            /**
+             *
+             * 主循环体是调ClientCnxnSocket.doTransport()
+             * 中间会穿插着往 outgoingQueue 放 Ping 包
+             *
+             */
+
             clientCnxnSocket.introduce(this, sessionId, outgoingQueue);
             clientCnxnSocket.updateNow();
             clientCnxnSocket.updateLastSendAndHeard();
-            int to;
+            int to; //剩多少时间需要发ping. (ping 是穿插在主逻辑中的)
             long lastPingRwServer = Time.currentElapsedTime();
             final int MAX_SEND_PING_INTERVAL = 10000; //10 seconds
             while (state.isAlive()) {
@@ -1155,6 +1168,7 @@ public class ClientCnxn {
                         if (closing) {
                             break;
                         }
+                        // 在循环里建立连接
                         startConnect();
                         clientCnxnSocket.updateLastSendAndHeard();
                     }
@@ -1516,6 +1530,7 @@ public class ClientCnxn {
         ReplyHeader r = new ReplyHeader();
         Packet packet = queuePacket(h, r, request, response, null, null, null,
                 null, watchRegistration, watchDeregistration);
+        // wait在packet上, 同步发送接收的方式值得学习
         synchronized (packet) {
             while (!packet.finished) {
                 packet.wait();

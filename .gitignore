@@ -16,3 +16,5 @@ src/c/generated/
 src/java/generated/
 src/java/lib/ant-eclipse-*
 src/java/lib/ivy-*
+/.idea/
+*.iml

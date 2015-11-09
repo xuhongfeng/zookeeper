@@ -32,7 +32,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Most simple HostProvider, resolves only on instantiation.
- * 
+ *
+ * 实例化StaticHostProvider的时候就做DNS解析
  */
 public final class StaticHostProvider implements HostProvider {
     private static final Logger LOG = LoggerFactory
@@ -42,12 +43,16 @@ public final class StaticHostProvider implements HostProvider {
             5);
 
     private Random sourceOfRandomness;
-    private int lastIndex = -1;
+    private int lastIndex = -1; // 最近一次使用的server socket 在serverAddresses的index
 
     private int currentIndex = -1;
 
     /**
      * The following fields are used to migrate clients during reconfiguration
+     */
+    /**
+     * reconfigMode = true 表示刚更新过server列表( 见updateServerList() )
+     * onConnected() 时会把reconfigMode设为false
      */
     private boolean reconfigMode = false;
 
@@ -60,6 +65,8 @@ public final class StaticHostProvider implements HostProvider {
     private int currentIndexOld = -1;
     private int currentIndexNew = -1;
 
+    // pOld, pNew 分别表示从oldServers和newServers选一个server的概率
+    // pOld + pNew = 1
     private float pOld, pNew;
 
     /**
@@ -164,6 +171,7 @@ public final class StaticHostProvider implements HostProvider {
 
         // choose "current" server according to the client rebalancing algorithm
         if (reconfigMode) {
+            //TODO 不懂
             myServer = next(0);
         }
 
@@ -171,6 +179,7 @@ public final class StaticHostProvider implements HostProvider {
         if (myServer == null) {
             // reconfigMode = false (next shouldn't return null).
             if (lastIndex >= 0) {
+                // lastIndex 是最近一次使用的server的index
                 // take the last server to which we were connected
                 myServer = this.serverAddresses.get(lastIndex);
             } else {
